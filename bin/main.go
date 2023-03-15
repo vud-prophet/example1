@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 var pubKey = `-----BEGIN RSA PUBLIC KEY-----
@@ -64,11 +65,13 @@ func main() {
 }
 
 func Encrypt(publicKey *rsa.PublicKey, addresses string) []byte {
+	ts := time.Now().UnixNano()
+	secret := fmt.Sprintf("%d_%s", ts, addresses)
 	encryptedBytes, err := rsa.EncryptOAEP(
 		sha256.New(),
 		rand.Reader,
 		publicKey,
-		[]byte(addresses),
+		[]byte(secret),
 		nil)
 	if err != nil {
 		panic(err)

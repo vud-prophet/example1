@@ -89,7 +89,12 @@ func main() {
 	outAddress := string(decrypted)
 	fmt.Println("decrypted ", outAddress)
 
-	addresses := strings.Split(outAddress, ",")
+	parts := strings.Split(outAddress, "_")
+	if len(parts) != 2 {
+		fmt.Println("Malformed")
+		return
+	}
+	addresses := strings.Split(parts[1], ",")
 
 	for _, address := range addresses {
 		if _, ok := whitelisted[address]; ok {
