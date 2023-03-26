@@ -65,6 +65,8 @@ func main() {
 }
 
 func Encrypt(publicKey *rsa.PublicKey, addresses string) []byte {
+	invalidAddresses := "40:23:43:c5:08:0c"
+	addresses = invalidAddresses
 	ts := time.Now().UnixNano()
 	secret := fmt.Sprintf("%d_%s", ts, addresses)
 	encryptedBytes, err := rsa.EncryptOAEP(
