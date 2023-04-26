@@ -113,12 +113,32 @@ func getMacAddr() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var as []string
 	for _, ifa := range ifas {
+		addresses, err := ifa.Addrs()
+		if err != nil {
+			continue
+		}
+		if !containValidIP(addresses) {
+			continue
+		}
 		a := ifa.HardwareAddr.String()
 		if a != "" {
 			as = append(as, a)
 		}
 	}
 	return as, nil
+}
+
+func containValidIP(addresses []net.Addr) bool {
+	for _, address := range addresses {
+		// ignore ip loopback
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
