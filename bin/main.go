@@ -134,10 +134,8 @@ func getMacAddr() ([]string, error) {
 func containValidIP(addresses []net.Addr) bool {
 	for _, address := range addresses {
 		// ignore ip loopback
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return true
-			}
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+			return true
 		}
 	}
 	return false

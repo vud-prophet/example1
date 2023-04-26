@@ -6,6 +6,6 @@ type EncryptPayload struct {
 }
 
 type Response struct {
-	Encrypted string `json:"encrypted"`
-	Version   string `json:"version"`
+	Encrypted string `json:"mm_encrypted_string"`
+	Version   string `json:"mm_encrypted_version"`
 }
