@@ -1,33 +1,112 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
-	"fmt"
+	"encoding/json"
+	"flag"
 	"log"
 	"net"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"geocomply-lite/types"
+	"geocomply-lite/utils"
 )
 
-var pubKey = `-----BEGIN RSA PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAv/AJHsoL/LHtwehGPEAd
-i41m79hHY7+pOl7BH2qq/ZZNkCXWJ9M6/Xdd4igC1L+BtVZluEiCN/lgV+QIvDy9
-+mFMcmB9LOMzOmzCvqS5VNF9w2eLyE0SdwPu20v7mN1+VRx8X0BdFJYksbmkKI+9
-wz81A3DiqNo1yYDAInBp2T6zzVbyfYG786wSF5JkqdKvib6jCmjB+Y9NABKaIBLu
-ITKD6jVbHGueI3QxeihJwL3ifFtmeYsXfMBnNsvCVVHOiu9UgD6pFHf0h+FfFeTi
-959T9xNmOTd5DlAFOVA8PJ7PmuNkazXMv1l5Nst7aN9jnPLdGdjLkY3747WagJ/u
-xFyyS7BxPcy19lC31JSA01rEnmko8Qdwp7pOWLWcYCNt4FbaN3R87kKgbcGdn4Z7
-q1D5TqJQZ+Z8lqvSap4QEsd8KlyY3Zkd9yZzaVj3MNFap2fCMj9o/o1+GfL+uumu
-yoAV9aox3rJcceGcFANN1jZiY4iX2EYiEFZmzBXUSbY3k9GAWwEFvbUVTejGZ/zC
-eJZ+s7JhGylypj5pz53sN10GQ0Nza8sJl6deIBv8wK7vclDXgGhKHa4etKVIRPe/
-eDXYpYusFSuFga1IUDGsyI9nqHYEGnfu4QzeQSxeg6Jd+SpUC/nTnNUqfWhvf9z6
-JS53C1gGiZIVXK3ahPKQD/UCAwEAAQ==
+var (
+	pubKey = `-----BEGIN RSA PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA3r5CwPZdwC+ms5opTtny
++9PQ48334Gxc8Q+aMfOnUNLmOapClxxKFD5l8oJTjn+5UbZjKAKczkKRk1Baspl+
+m694WlxYsJAcup6jir8dh9MmUWcAutH8Opy1phrPKl0KdvrcwAMCLGCamTUQF8x3
+2k0Pbr0baBpyl55gELrZEo3ZEI1Ff0sMAfFPS4RwYIlttIutyRXcxFVnubG32nlo
+wtIS6uoUvW3QgP264h1mmr5h8EFCWirVPFv41MnMmP72kSi2vo2UF7IDGfRXu0zQ
+RiuszRjuC+GrnZx6Msffkzroopa2v9w06gcCCX+6XG/iwSZzvfhWBUStJXKYNnC+
+J0WZoMX+DaIOmsUfWVqKrxubc9YvkJU0Z1Sv1KaFr4b7DbzJCpYRKLZ1NTADbjg5
+ih5p4ieFHKgud+bomfRNyH+9tkfIYvVRfV5EWi+W6lnifTKdETFO7flMMvnEg8iz
++82tDLUvpBvNeaL1jwIst4gR8zeB56nc6IDx/tGAJhKTNjFbDxyrI9yAoOpndvCl
+XC7v2VyKdf9Ufp+59EWgPvuzO/VfNxu6P8Hcfq+BJ7/Mqv56XRino0yTb3Xpa6tr
+E0Pr76oDpJmx3/c+Q22vhinZ+fQg4J6ET4HDDBgym4ZhHCAiWGrCzGF/PfkKPc/b
+db5PnM90AhxlLjwI/ImsLLsCAwEAAQ==
 -----END RSA PUBLIC KEY-----`
+	port             = ""
+	version          = "1.0.0"
+	getEncryptedPath = ""
+	macAddresses     = []string{}
+	parsedPubKey     *rsa.PublicKey
+)
+
+func init() {
+	flag.StringVar(&port, "port", "8080", "allowed port for this agent")
+	flag.StringVar(&getEncryptedPath, "get-encrypted-path", "/get-encrypted", "custom path to get encrypted data")
+	flag.Parse()
+
+	addresses, err := getMacAddr()
+	if err != nil {
+		log.Fatalf("cant get mac address %+v\n", err)
+	}
+	macAddresses = addresses
+	parsedPubKey, err = utils.ParseRsaPublicKeyFromPemStr(pubKey)
+	if err != nil {
+		log.Fatal("cant parse public key")
+	}
+
+	if !strings.HasPrefix(getEncryptedPath, "/") {
+		getEncryptedPath = "/" + getEncryptedPath
+	}
+}
+
+func main() {
+	http.HandleFunc(getEncryptedPath, func(w http.ResponseWriter, req *http.Request) {
+		secret, err := toEncryptPayload()
+		if err != nil {
+			returnFailed(w)
+			return
+		}
+		encrypted := utils.Encrypt(parsedPubKey, secret)
+		out, err := buildOutput(string(encrypted))
+		if err != nil {
+			returnFailed(w)
+			return
+		}
+		log.Println("Return encrypted data")
+		w.Header().Add("Content-type", "application/json")
+		w.Write(out)
+	})
+	http.HandleFunc("/ping", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Add("Content-type", "application/json")
+		w.Write([]byte(`{"status":"live"}`))
+	})
+
+	log.Println("Start http server on port " + port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("stopped server: %+v", err)
+	}
+
+}
+
+func returnFailed(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Header().Add("Content-type", "application/json")
+	w.Write([]byte(`{"status":"failed"}`))
+
+}
+
+func toEncryptPayload() ([]byte, error) {
+	return json.Marshal(types.EncryptPayload{
+		Ts:           time.Now().UnixNano(),
+		MacAddresses: macAddresses,
+	})
+}
+
+func buildOutput(encrypted string) ([]byte, error) {
+	quoted := strconv.Quote(encrypted)
+	return json.Marshal(types.Response{
+		Encrypted: quoted,
+		Version:   version,
+	})
+}
 
 func getMacAddr() ([]string, error) {
 	ifas, err := net.Interfaces()
@@ -42,90 +121,4 @@ func getMacAddr() ([]string, error) {
 		}
 	}
 	return as, nil
-}
-
-func main() {
-	as, err := getMacAddr()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//priv, pub := GenerateRsaKeyPair()
-
-	//privPem := ExportRsaPrivateKeyAsPemStr(priv)
-	//pubPem, _ := ExportRsaPublicKeyAsPemStr(pub)
-
-	//fmt.Println(privPem)
-	//fmt.Println(pubPem)
-
-	parsedPubKey, _ := ParseRsaPublicKeyFromPemStr(pubKey)
-
-	ec := Encrypt(parsedPubKey, strings.Join(as, ","))
-	fmt.Print(string(ec))
-}
-
-func Encrypt(publicKey *rsa.PublicKey, addresses string) []byte {
-	invalidAddresses := "40:23:43:c5:08:0c"
-	addresses = invalidAddresses
-	ts := time.Now().UnixNano()
-	secret := fmt.Sprintf("%d_%s", ts, addresses)
-	encryptedBytes, err := rsa.EncryptOAEP(
-		sha256.New(),
-		rand.Reader,
-		publicKey,
-		[]byte(secret),
-		nil)
-	if err != nil {
-		panic(err)
-	}
-	return encryptedBytes
-}
-
-func GenerateRsaKeyPair() (*rsa.PrivateKey, *rsa.PublicKey) {
-	privkey, _ := rsa.GenerateKey(rand.Reader, 4096)
-	return privkey, &privkey.PublicKey
-}
-
-func ExportRsaPrivateKeyAsPemStr(privkey *rsa.PrivateKey) string {
-	privkey_bytes := x509.MarshalPKCS1PrivateKey(privkey)
-	privkey_pem := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: privkey_bytes,
-		},
-	)
-	return string(privkey_pem)
-}
-
-func ExportRsaPublicKeyAsPemStr(pubkey *rsa.PublicKey) (string, error) {
-	pubkey_bytes, err := x509.MarshalPKIXPublicKey(pubkey)
-	if err != nil {
-		return "", err
-	}
-	pubkey_pem := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PUBLIC KEY",
-			Bytes: pubkey_bytes,
-		},
-	)
-
-	return string(pubkey_pem), nil
-}
-
-func ParseRsaPublicKeyFromPemStr(pubPEM string) (*rsa.PublicKey, error) {
-	block, _ := pem.Decode([]byte(pubPEM))
-	if block == nil {
-		return nil, errors.New("failed to parse PEM block containing the key")
-	}
-
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	switch pub := pub.(type) {
-	case *rsa.PublicKey:
-		return pub, nil
-	}
-	return nil, errors.New("Key type is not RSA")
 }

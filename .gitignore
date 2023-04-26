@@ -1,0 +1,5 @@
+cli/*
+!cli/**/*.go
+bin/*
+!bin/**/*.go
+

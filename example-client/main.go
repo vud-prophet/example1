@@ -4,27 +4,27 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"geocomply-lite/types"
 	"io/ioutil"
 	"net/http"
-	"os/exec"
-	"strconv"
 )
 
-var ()
-
 func main() {
-	//macAdd, _ := exec.Command("./bin/bin").Output()
-	macAdd, _ := exec.Command("./bin/invalid").Output()
+	resp, _ := http.Get("http://localhost:8080/get-encrypted")
+
+	defer resp.Body.Close()
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	var payload types.Response
+	json.Unmarshal(body, &payload)
 
 	url := "http://localhost:9999"
 	method := "GET"
 	client := &http.Client{}
-	toSend := strconv.Quote(string(macAdd))
-	reqBody := map[string]any{
-		"x-check": toSend,
-	}
 
-	fmt.Println(toSend)
+	reqBody := map[string]any{
+		"x-check": payload.Encrypted,
+	}
 	reqJSON, err := json.Marshal(reqBody)
 
 	req, err := http.NewRequest(method, url, bytes.NewReader(reqJSON))
@@ -40,10 +40,10 @@ func main() {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(string(body))
+	//fmt.Println(string(body))
 }
